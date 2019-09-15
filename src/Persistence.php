@@ -2,6 +2,7 @@
 
 namespace RenanBritz\DoctrineUtils;
 
+use Doctrine\ORM\PersistentCollection;
 use LogicException;
 use Doctrine\ORM\Query;
 use InvalidArgumentException;
@@ -67,7 +68,6 @@ class Persistence
 
             if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
                 $collection = new ArrayCollection();
-                $presentIds = [];
 
                 foreach ($childData ?? [] as $datum) {
                     $child = null;
@@ -78,8 +78,6 @@ class Persistence
                         if ($child === null) {
                             throw new LogicException("Invalid id {$datum['id']} for entity {$assocMapping['targetEntity']}");
                         }
-
-                        $presentIds[] = $datum['id'];
                     } else {
                         $child = new $assocMapping['targetEntity'];
                     }
@@ -87,19 +85,38 @@ class Persistence
                     $collection->add($this->_persist($child, $datum, $entity));
                 }
 
-                $entity->{'set' . $ucField}($collection);
+                if ($entity->getId() !== null) {
+                    /** @var PersistentCollection $originalCollection */
+                    $originalCollection = $entity->{'get' . $ucField}();
 
-                if (isset($assocMapping['mappedBy'])) {
-                    // Remove non present ids.
-                    $this->deleteQueries[] = $this->em->createQueryBuilder()
-                        ->from($assocMapping['targetEntity'], 'te')
-                        ->delete()
-                        ->where('te.id NOT IN (:presentIds)')
-                        ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
-                        ->setParameter('presentIds', $presentIds ?: [-1])
-                        ->setParameter('entityId', $entity->getId())
-                        ->getQuery();
+                    // Add the new elements to the original collection.
+                    foreach ($collection as $element) {
+                        if (!$originalCollection->contains($element)) {
+                            $originalCollection->add($element);
+                        }
+                    }
+
+                    // Remove non-present elements from the original collection.
+                    foreach ($originalCollection as $element) {
+                        if (!$collection->contains($element)) {
+                            $originalCollection->removeElement($element);
+                        }
+                    }
+                } else {
+                    $entity->{'set' . $ucField}($collection);
                 }
+
+//                if (isset($assocMapping['mappedBy'])) {
+//                    // Remove non present ids.
+//                    $this->deleteQueries[] = $this->em->createQueryBuilder()
+//                        ->from($assocMapping['targetEntity'], 'te')
+//                        ->delete()
+//                        ->where('te.id NOT IN (:presentIds)')
+//                        ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
+//                        ->setParameter('presentIds', $presentIds ?: [-1])
+//                        ->setParameter('entityId', $entity->getId())
+//                        ->getQuery();
+//                }
             } else {
                 $parentClass = null;
 

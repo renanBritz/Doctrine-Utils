@@ -50,7 +50,7 @@ class Person
     protected $gender;
 
     /**
-     * @ORM\ManyToMany(targetEntity="Address", orphanRemoval=true, cascade={"all"})
+     * @ORM\ManyToMany(targetEntity="Address", orphanRemoval=true)
      * @ORM\JoinTable(name="people_addresses",
      *      joinColumns={@ORM\JoinColumn(name="person_id", referencedColumnName="id")},
      *      inverseJoinColumns={@ORM\JoinColumn(name="address_id", referencedColumnName="id", unique=true)}
