@@ -1,0 +1,22 @@
+{
+    "name": "renanbritz/doctrine-utils",
+    "description": "Helpers to improve productivity with Doctrine ORM.",
+    "authors": [
+        {
+            "name": "Renan Britz",
+            "email": "renanpiresbritz@hotmail.com"
+        }
+    ],
+    "require": {
+        "doctrine/orm": "^2.6",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "RenanBritz\\DoctrineUtils\\": "src"
+        }
+    },
+    "require-dev": {
+        "symfony/var-dumper": "^4.3"
+    }
+}
