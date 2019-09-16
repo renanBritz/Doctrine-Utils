@@ -4,9 +4,10 @@
     "authors": [
         {
             "name": "Renan Britz",
-            "email": "renanpiresbritz@hotmail.com"
+            "email": "renanbritz@affecty.com"
         }
     ],
+    "license": "MIT",
     "require": {
         "doctrine/orm": "^2.6",
         "ext-json": "*",
