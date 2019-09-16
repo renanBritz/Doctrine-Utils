@@ -15,16 +15,50 @@ class Persistence
     /**
      * @var EntityManager
      */
-    protected $em;
+    private $em;
 
     /**
      * @var Query[]
      */
-    protected $deleteQueries = [];
+    private $deleteQueries = [];
+
+    /**
+     * @var array
+     */
+    private $metadataCache = [];
+
+    /**
+     * Removes collection elements using a DQL query. (issue: Many to Many Unidirectional will become orphan, but they
+     * should be deleted).
+     *
+     * @var integer
+     */
+    const REMOVE_DQL = 1;
+
+    /**
+     * Removes collection elements by syncing the original PersistentCollection. (Bad performance).
+     *
+     * @var integer
+     */
+    const REMOVE_FROM_COLLECTION = 2;
+
+    public static $COLLECTION_REMOVE_STRATEGY = self::REMOVE_FROM_COLLECTION;
 
     public function __construct(EntityManager $entityManager)
     {
         $this->em = $entityManager;
+    }
+
+    private function getMetadata($className)
+    {
+        if (isset($this->metadataCache[$className])) {
+            return $this->metadataCache[$className];
+        }
+
+        $metadata = $this->em->getClassMetadata($className);
+        $this->metadataCache[$className] = $metadata;
+
+        return $metadata;
     }
 
     /**
@@ -56,8 +90,7 @@ class Persistence
 
     private function _persist($entity, array &$data, $parentRef = null)
     {
-        $className = get_class($entity);
-        $metadata = $this->em->getClassMetadata($className);
+        $metadata = $this->getMetadata(get_class($entity));
 
         $this->setFields($entity, $metadata, $data);
 
@@ -68,16 +101,19 @@ class Persistence
 
             if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
                 $collection = new ArrayCollection();
+                $presentIds = [];
 
                 foreach ($childData ?? [] as $datum) {
                     $child = null;
 
                     if (isset($datum['id'])) {
-                        $child = $this->em->getRepository($assocMapping['targetEntity'])->findOneBy(['id' => $datum['id']]);
+                        $child = $this->em->getRepository($assocMapping['targetEntity'])->findOneById($datum['id']);
 
                         if ($child === null) {
                             throw new LogicException("Invalid id {$datum['id']} for entity {$assocMapping['targetEntity']}");
                         }
+
+                        $presentIds[] = $datum['id'];
                     } else {
                         $child = new $assocMapping['targetEntity'];
                     }
@@ -85,38 +121,44 @@ class Persistence
                     $collection->add($this->_persist($child, $datum, $entity));
                 }
 
-                if ($entity->getId() !== null) {
-                    /** @var PersistentCollection $originalCollection */
-                    $originalCollection = $entity->{'get' . $ucField}();
+                if (self::$COLLECTION_REMOVE_STRATEGY === self::REMOVE_FROM_COLLECTION) {
+                    // Use the PersistentCollection to update non-present elements (bad performance).
+                    if ($entity->getId() !== null) {
+                        /** @var PersistentCollection $originalCollection */
+                        $originalCollection = $entity->{'get' . $ucField}();
 
-                    // Add the new elements to the original collection.
-                    foreach ($collection as $element) {
-                        if (!$originalCollection->contains($element)) {
-                            $originalCollection->add($element);
+                        // Add the new elements to the original collection.
+                        foreach ($collection as $element) {
+                            if (!$originalCollection->contains($element)) {
+                                $originalCollection->add($element);
+                            }
                         }
-                    }
 
-                    // Remove non-present elements from the original collection.
-                    foreach ($originalCollection as $element) {
-                        if (!$collection->contains($element)) {
-                            $originalCollection->removeElement($element);
+                        // Remove non-present elements from the original collection.
+                        foreach ($originalCollection as $element) {
+                            if (!$collection->contains($element)) {
+                                $originalCollection->removeElement($element);
+                            }
                         }
+                    } else {
+                        $entity->{'set' . $ucField}($collection);
                     }
-                } else {
+                } else if (self::$COLLECTION_REMOVE_STRATEGY === self::REMOVE_DQL) {
                     $entity->{'set' . $ucField}($collection);
-                }
 
-//                if (isset($assocMapping['mappedBy'])) {
-//                    // Remove non present ids.
-//                    $this->deleteQueries[] = $this->em->createQueryBuilder()
-//                        ->from($assocMapping['targetEntity'], 'te')
-//                        ->delete()
-//                        ->where('te.id NOT IN (:presentIds)')
-//                        ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
-//                        ->setParameter('presentIds', $presentIds ?: [-1])
-//                        ->setParameter('entityId', $entity->getId())
-//                        ->getQuery();
-//                }
+                    // Delete non-present elements with DQL. TODO: (Fix) When assoc is Unidirectional Many to Many the targetEntity becomes orphan, it should be deleted.
+                    if ($entity->getId() !== null && isset($assocMapping['mappedBy'])) {
+                        // Remove non present ids.
+                        $this->deleteQueries[] = $this->em->createQueryBuilder()
+                            ->from($assocMapping['targetEntity'], 'te')
+                            ->delete()
+                            ->where('te.id NOT IN (:presentIds)')
+                            ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
+                            ->setParameter('presentIds', $presentIds ?: [-1])
+                            ->setParameter('entityId', $entity->getId())
+                            ->getQuery();
+                    }
+                }
             } else {
                 $parentClass = null;
 
@@ -130,7 +172,7 @@ class Persistence
                     $child = null;
 
                     if (isset($childData['id'])) {
-                        $child = $this->em->getReference($assocMapping['targetEntity'], $childData['id']);
+                        $child = $this->em->getRepository($assocMapping['targetEntity'])->findOneById($childData['id']);
 
                         if ($child === null) {
                             throw new LogicException("Invalid id {$childData['id']} for entity {$assocMapping['targetEntity']}");
@@ -150,9 +192,40 @@ class Persistence
     }
 
     /**
+     * @param object $entity The entity to get ids from.
+     * @param array $data Data indicates which fields to return (the ones that were persisted).
+     * @return array
+     */
+    private function getIds($entity, array &$data)
+    {
+        $ids = ['id' => $entity->getId()];
+        $metadata = $this->getMetadata(get_class($entity));
+
+        foreach ($metadata->associationMappings as $assocName => $assocMapping) {
+            $childData = $data[$assocName];
+            $ucField = ucfirst($assocMapping['fieldName']);
+
+            if (isset($childData)) {
+                if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
+                    $collection = $entity->{'get' . $ucField}();
+
+                    foreach ($collection as $element) {
+                        $ids[$assocName][] = $element->getId();
+                    }
+                } else {
+                    $ids[$assocName] = $this->getIds($entity->{'get' . $ucField}(), $childData);
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * @param object|string $entityObject The root entity being persisted.
      * @param array $data
      * @throws \Doctrine\ORM\ORMException
+     * @return array
      */
     public function persist($entityObject, array $data)
     {
@@ -168,16 +241,22 @@ class Persistence
 
         $this->_persist($entityObject, $data);
 
-        // Run the delete queries (removes non-present collection items).
-        $this->em->beginTransaction();
+        if (!empty($this->deleteQueries)) {
+            // Run the delete queries (removes non-present collection items).
+            $this->em->beginTransaction();
 
-        foreach ($this->deleteQueries as $query) {
-            $query->execute();
+            foreach ($this->deleteQueries as $query) {
+                $query->execute();
+            }
+
+            $this->em->flush();
+            $this->em->commit();
+
+            $this->deleteQueries = [];
+        } else {
+            $this->em->flush();
         }
 
-        $this->em->flush();
-        $this->em->commit();
-
-        $this->deleteQueries = [];
+        return $this->getIds($entityObject, $data);
     }
 }
