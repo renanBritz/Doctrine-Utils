@@ -96,6 +96,10 @@ class Persistence
 
         // Set associations
         foreach ($metadata->associationMappings as $assocName => $assocMapping) {
+            if (!isset($data[$assocName])) {
+                continue;
+            }
+
             $childData = $data[$assocName];
             $ucField = ucfirst($assocMapping['fieldName']);
 
@@ -103,7 +107,7 @@ class Persistence
                 $collection = new ArrayCollection();
                 $presentIds = [];
 
-                foreach ($childData ?? [] as $datum) {
+                foreach ($childData as $datum) {
                     $child = null;
 
                     if (isset($datum['id'])) {
@@ -168,7 +172,7 @@ class Persistence
 
                 if ($parentClass && $assocMapping['targetEntity'] === $parentClass) {
                     $entity->{'set' . $ucField}($parentRef);
-                } else if (isset($childData)) {
+                } else {
                     $child = null;
 
                     if (isset($childData['id'])) {
