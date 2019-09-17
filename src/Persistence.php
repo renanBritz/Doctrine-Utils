@@ -202,7 +202,7 @@ class Persistence
         $metadata = $this->getMetadata(get_class($entity));
 
         foreach ($metadata->associationMappings as $assocName => $assocMapping) {
-            $childData = $data[$assocName];
+            $childData = $data[$assocName] ?? null;
             $ucField = ucfirst($assocMapping['fieldName']);
 
             if (isset($childData)) {
