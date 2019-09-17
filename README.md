@@ -17,7 +17,7 @@ Using IGDB's [Apicalypse](https://apicalypse.io/) syntax (with a few improvement
 use App\Entities\Person;
 use RenanBritz\DoctrineUtils\Persistence;
 
-class UserController extends AbstractController
+class PersonController extends AbstractController
 {
   private $em;
   
@@ -29,7 +29,7 @@ class UserController extends AbstractController
     $this->persistence = new Persistence($this->em);
   }
 
-  /** Create a new user. */
+  /** Create a new person. */
   public function store(Request $request)
   {
     $data = $request->all();
@@ -40,19 +40,19 @@ class UserController extends AbstractController
     // Domain/Business logic...
   }
   
-  /** Update existing user. */
-  public function update(Request $request, int $userId)
+  /** Update existing person. */
+  public function update(Request $request, int $personId)
   {
-    $user = $this->em->getRepository(Person::class)->findOneById($userId);
+    $person = $this->em->getRepository(Person::class)->findOneById($personId);
     
-    if (!$user) {
+    if (!$person) {
       // Return 404 error.
     }
     
     $data = $request->all();
     // Validation logic...
     
-    $this->persistence->persist($user, $data);
+    $this->persistence->persist($person, $data);
     
     // Domain/Business logic...
   }
@@ -60,8 +60,7 @@ class UserController extends AbstractController
 ```
 
 #### Person POST Data Example
-```javascript
-// Person
+```json
 {
     "name": "John Doe",
     "gender": 1,
@@ -100,8 +99,7 @@ class UserController extends AbstractController
 ```
 
 #### Response Data Example
-```javascript
-// Person
+```json
 {
   "id": 2,
   "role": {
