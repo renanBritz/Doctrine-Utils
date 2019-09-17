@@ -15,7 +15,8 @@
     },
     "autoload": {
         "psr-4": {
-            "RenanBritz\\DoctrineUtils\\": "src"
+            "RenanBritz\\DoctrineUtils\\": "src",
+            "App\\Entities\\": "Entities"
         }
     },
     "require-dev": {

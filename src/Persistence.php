@@ -2,11 +2,11 @@
 
 namespace RenanBritz\DoctrineUtils;
 
-use Doctrine\ORM\PersistentCollection;
 use LogicException;
 use Doctrine\ORM\Query;
 use InvalidArgumentException;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\PersistentCollection;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\Common\Collections\ArrayCollection;
 
@@ -96,14 +96,10 @@ class Persistence
 
         // Set associations
         foreach ($metadata->associationMappings as $assocName => $assocMapping) {
-            if (!isset($data[$assocName])) {
-                continue;
-            }
-
-            $childData = $data[$assocName];
+            $childData = $data[$assocName] ?? null;
             $ucField = ucfirst($assocMapping['fieldName']);
 
-            if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
+            if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY]) && isset($childData)) {
                 $collection = new ArrayCollection();
                 $presentIds = [];
 
@@ -170,9 +166,9 @@ class Persistence
                     $parentClass = get_class($parentRef);
                 }
 
-                if ($parentClass && $assocMapping['targetEntity'] === $parentClass) {
+                if ($parentClass && $metadata->associationMappings[$assocName]['targetEntity'] === $parentClass) {
                     $entity->{'set' . $ucField}($parentRef);
-                } else {
+                } else if (isset($childData)) {
                     $child = null;
 
                     if (isset($childData['id'])) {
