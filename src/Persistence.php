@@ -42,6 +42,11 @@ class Persistence
      */
     const REMOVE_FROM_COLLECTION = 2;
 
+    /**
+     * The strategy used to remove resource collection associations.
+     *
+     * @var int
+     */
     public static $COLLECTION_REMOVE_STRATEGY = self::REMOVE_FROM_COLLECTION;
 
     public function __construct(EntityManager $entityManager)
@@ -136,7 +141,7 @@ class Persistence
 
                         // Remove non-present elements from the original collection.
                         foreach ($originalCollection as $element) {
-                            if (!$collection->contains($element)) {
+                            if (!in_array($element->getId(), $presentIds)) {
                                 $originalCollection->removeElement($element);
                             }
                         }
@@ -146,7 +151,9 @@ class Persistence
                 } else if (self::$COLLECTION_REMOVE_STRATEGY === self::REMOVE_DQL) {
                     $entity->{'set' . $ucField}($collection);
 
-                    // Delete non-present elements with DQL. TODO: (Fix) When assoc is Unidirectional Many to Many the targetEntity becomes orphan, it should be deleted.
+                    // Delete non-present elements with DQL.
+                    // TODO: (Fix) When assoc is Unidirectional Many to Many the targetEntity becomes orphan, it should be deleted.
+                    // TODO: Add SoftDelete support.
                     if ($entity->getId() !== null && isset($assocMapping['mappedBy'])) {
                         // Remove non present ids.
                         $this->deleteQueries[] = $this->em->createQueryBuilder()
@@ -258,5 +265,18 @@ class Persistence
         }
 
         return $this->getIds($entityObject, $data);
+    }
+
+    /**
+     * Useful when making multiple persists in the same request. Dont forget to call commit()
+     */
+    public function beginTransaction()
+    {
+        $this->em->beginTransaction();
+    }
+
+    public function commit()
+    {
+        $this->em->commit();
     }
 }

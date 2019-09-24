@@ -11,11 +11,16 @@
     "require": {
         "doctrine/orm": "^2.6",
         "ext-json": "*",
-        "php": ">=7"
+        "php": ">=7",
+        "ext-ctype": "*"
     },
     "autoload": {
         "psr-4": {
-            "RenanBritz\\DoctrineUtils\\": "src",
+            "RenanBritz\\DoctrineUtils\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
             "App\\Entities\\": "Entities"
         }
     },

@@ -1,4 +1,4 @@
 vendor
 *.sqlite
 .idea
-src/Entities
+Entities
