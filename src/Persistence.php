@@ -2,6 +2,7 @@
 
 namespace RenanBritz\DoctrineUtils;
 
+use DateTime;
 use LogicException;
 use Doctrine\ORM\Query;
 use InvalidArgumentException;
@@ -132,17 +133,17 @@ class Persistence
                         /** @var PersistentCollection $originalCollection */
                         $originalCollection = $entity->{'get' . $ucField}();
 
-                        // Add the new elements to the original collection.
-                        foreach ($collection as $element) {
-                            if (!$originalCollection->contains($element)) {
-                                $originalCollection->add($element);
-                            }
-                        }
-
                         // Remove non-present elements from the original collection.
                         foreach ($originalCollection as $element) {
                             if (!in_array($element->getId(), $presentIds)) {
                                 $originalCollection->removeElement($element);
+                            }
+                        }
+
+                        // Add the new elements to the original collection.
+                        foreach ($collection as $element) {
+                            if (!$originalCollection->contains($element)) {
+                                $originalCollection->add($element);
                             }
                         }
                     } else {
@@ -155,15 +156,24 @@ class Persistence
                     // TODO: (Fix) When assoc is Unidirectional Many to Many the targetEntity becomes orphan, it should be deleted.
                     // TODO: Add SoftDelete support.
                     if ($entity->getId() !== null && isset($assocMapping['mappedBy'])) {
+                        $deleteQuery = $this->em->createQueryBuilder()
+                            ->from($assocMapping['targetEntity'], 'te');
+
+                        if (isset($this->getMetadata($assocMapping['targetEntity'])->fieldMappings['deletedAt'])) {
+                            $deleteQuery->update();
+                            $deleteQuery->set('te.deletedAt', ':deletedAt');
+                            $deleteQuery->setParameter('deletedAt', new DateTime());
+                        } else {
+                            $deleteQuery->delete();
+                        }
+
                         // Remove non present ids.
-                        $this->deleteQueries[] = $this->em->createQueryBuilder()
-                            ->from($assocMapping['targetEntity'], 'te')
-                            ->delete()
-                            ->where('te.id NOT IN (:presentIds)')
+                        $deleteQuery->where('te.id NOT IN (:presentIds)')
                             ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
                             ->setParameter('presentIds', $presentIds ?: [-1])
-                            ->setParameter('entityId', $entity->getId())
-                            ->getQuery();
+                            ->setParameter('entityId', $entity->getId());
+
+                        $this->deleteQueries[] = $deleteQuery->getQuery();
                     }
                 }
             } else {
