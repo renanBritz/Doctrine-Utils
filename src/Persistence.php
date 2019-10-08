@@ -29,6 +29,13 @@ class Persistence
     private $metadataCache = [];
 
     /**
+     * Names of associations that should not be persisted.
+     *
+     * @var array
+     */
+    private $persistBlacklist = [];
+
+    /**
      * Removes collection elements using a DQL query. (issue: Many to Many Unidirectional will become orphan, but they
      * should be deleted).
      *
@@ -53,6 +60,21 @@ class Persistence
     public function __construct(EntityManager $entityManager)
     {
         $this->em = $entityManager;
+    }
+
+    public function addPersistBlacklist($name)
+    {
+        $this->persistBlacklist[$name] = true;
+    }
+
+    public function getPersistBlacklist()
+    {
+        return $this->persistBlacklist;
+    }
+
+    public function clearPersistBlacklist()
+    {
+        $this->persistBlacklist = [];
     }
 
     private function getMetadata($className)
@@ -183,7 +205,7 @@ class Persistence
                     $parentClass = get_class($parentRef);
                 }
 
-                if ($parentClass && $metadata->associationMappings[$assocName]['targetEntity'] === $parentClass) {
+                if ($parentClass && $metadata->associationMappings[$assocName]['targetEntity'] === $parentClass && method_exists($entity, 'set' . $ucField)) {
                     $entity->{'set' . $ucField}($parentRef);
                 } else if (isset($childData)) {
                     $child = null;
@@ -198,7 +220,11 @@ class Persistence
                         $child = new $assocMapping['targetEntity'];
                     }
 
-                    $entity->{'set' . $ucField}($this->_persist($child, $childData, $entity));
+                    if (isset($this->persistBlacklist[$assocName])) {
+                        $entity->{'set' . $ucField}($child);
+                    } else {
+                        $entity->{'set' . $ucField}($this->_persist($child, $childData, $entity));
+                    }
                 }
             }
         }
