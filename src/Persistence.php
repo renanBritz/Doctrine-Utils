@@ -205,7 +205,9 @@ class Persistence
                     $parentClass = get_class($parentRef);
                 }
 
-                if ($parentClass && $metadata->associationMappings[$assocName]['targetEntity'] === $parentClass && method_exists($entity, 'set' . $ucField)) {
+                $targetEntity = $metadata->associationMappings[$assocName]['targetEntity'];
+
+                if ($parentClass && ($targetEntity === $parentClass || is_subclass_of($parentClass, $targetEntity)) && method_exists($entity, 'set' . $ucField)) {
                     $entity->{'set' . $ucField}($parentRef);
                 } else if (isset($childData)) {
                     $child = null;
