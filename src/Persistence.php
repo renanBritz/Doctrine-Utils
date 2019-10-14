@@ -127,7 +127,15 @@ class Persistence
             $childData = $data[$assocName] ?? null;
             $ucField = ucfirst($assocMapping['fieldName']);
 
-            if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY]) && isset($childData)) {
+            if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
+                if (!isset($childData)) {
+                    if (method_exists($entity, 'set' . $ucField)) {
+                        $entity->{'set' . $ucField}(new ArrayCollection());
+                    }
+
+                    continue;
+                }
+
                 $collection = new ArrayCollection();
                 $presentIds = [];
 
@@ -218,7 +226,7 @@ class Persistence
                         if ($child === null) {
                             throw new LogicException("Invalid id {$childData['id']} for entity {$assocMapping['targetEntity']}");
                         }
-                    }  else {
+                    } else {
                         $child = new $assocMapping['targetEntity'];
                     }
 
