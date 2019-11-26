@@ -6,15 +6,15 @@ use DateTime;
 use LogicException;
 use Doctrine\ORM\Query;
 use InvalidArgumentException;
-use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\PersistentCollection;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Common\Collections\ArrayCollection;
 
 class Persistence
 {
     /**
-     * @var EntityManager
+     * @var EntityManagerInterface
      */
     private $em;
 
@@ -44,7 +44,7 @@ class Persistence
     const REMOVE_DQL = 1;
 
     /**
-     * Removes collection elements by syncing the original PersistentCollection. (Bad performance).
+     * Removes collection elements by syncing the original PersistentCollection. (May have bad performance).
      *
      * @var integer
      */
@@ -57,7 +57,7 @@ class Persistence
      */
     public static $COLLECTION_REMOVE_STRATEGY = self::REMOVE_FROM_COLLECTION;
 
-    public function __construct(EntityManager $entityManager)
+    public function __construct(EntityManagerInterface $entityManager)
     {
         $this->em = $entityManager;
     }
@@ -129,9 +129,9 @@ class Persistence
 
             if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
                 if (!isset($childData)) {
-                    if (method_exists($entity, 'set' . $ucField)) {
-                        $entity->{'set' . $ucField}(new ArrayCollection());
-                    }
+//                    if (method_exists($entity, 'set' . $ucField)) {
+//                        $entity->{'set' . $ucField}(new ArrayCollection());
+//                    }
 
                     continue;
                 }
@@ -230,7 +230,7 @@ class Persistence
                         $child = new $assocMapping['targetEntity'];
                     }
 
-                    if (isset($this->persistBlacklist[$assocName])) {
+                    if (isset($this->persistBlacklist[$assocName]) || count(array_diff_key($childData, ['id' => 'id'])) === 0) {
                         $entity->{'set' . $ucField}($child);
                     } else {
                         $entity->{'set' . $ucField}($this->_persist($child, $childData, $entity));
@@ -277,7 +277,6 @@ class Persistence
     /**
      * @param object|string $entityObject The root entity being persisted.
      * @param array $data
-     * @throws \Doctrine\ORM\ORMException
      * @return array
      */
     public function persist($entityObject, array $data)
