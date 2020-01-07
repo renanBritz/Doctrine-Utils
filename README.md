@@ -5,9 +5,6 @@ This project aims to provide a simple interface to query and persist data with D
 ### Persistence
 By following a few simple conventions you'll be able to reduce the amount of code needed to store and update data to your database when using Doctrine ORM. See examples below.
 
-### Querying (WIP)
-Using IGDB's [Apicalypse](https://apicalypse.io/) syntax (with a few improvements) you'll be able to query your database using a simpler and more readable syntax. It'll significantly reduce the amount of DQL and repository code needed while providing more flexibility to your front-end.
-
 ## Examples
 ### Persisting Data (Create and Update Person)
 
