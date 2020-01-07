@@ -2,13 +2,12 @@
 
 namespace RenanBritz\DoctrineUtils;
 
-use DateTime;
 use LogicException;
-use Doctrine\ORM\Query;
 use InvalidArgumentException;
 use Doctrine\ORM\PersistentCollection;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityNotFoundException;
 use Doctrine\Common\Collections\ArrayCollection;
 
 class Persistence
@@ -17,11 +16,6 @@ class Persistence
      * @var EntityManagerInterface
      */
     private $em;
-
-    /**
-     * @var Query[]
-     */
-    private $deleteQueries = [];
 
     /**
      * @var array
@@ -34,28 +28,6 @@ class Persistence
      * @var array
      */
     private $persistBlacklist = [];
-
-    /**
-     * Removes collection elements using a DQL query. (issue: Many to Many Unidirectional will become orphan, but they
-     * should be deleted).
-     *
-     * @var integer
-     */
-    const REMOVE_DQL = 1;
-
-    /**
-     * Removes collection elements by syncing the original PersistentCollection. (May have bad performance).
-     *
-     * @var integer
-     */
-    const REMOVE_FROM_COLLECTION = 2;
-
-    /**
-     * The strategy used to remove resource collection associations.
-     *
-     * @var int
-     */
-    public static $COLLECTION_REMOVE_STRATEGY = self::REMOVE_FROM_COLLECTION;
 
     public function __construct(EntityManagerInterface $entityManager)
     {
@@ -116,6 +88,13 @@ class Persistence
         }
     }
 
+    /**
+     * @param $entity
+     * @param array $data
+     * @param null $parentRef
+     * @return object
+     * @throws EntityNotFoundException
+     */
     private function _persist($entity, array &$data, $parentRef = null)
     {
         $metadata = $this->getMetadata(get_class($entity));
@@ -128,11 +107,7 @@ class Persistence
             $ucField = ucfirst($assocMapping['fieldName']);
 
             if (in_array($assocMapping['type'], [ClassMetadata::MANY_TO_MANY, ClassMetadata::ONE_TO_MANY])) {
-                if (!isset($childData)) {
-//                    if (method_exists($entity, 'set' . $ucField)) {
-//                        $entity->{'set' . $ucField}(new ArrayCollection());
-//                    }
-
+                if (!$childData) {
                     continue;
                 }
 
@@ -142,69 +117,45 @@ class Persistence
                 foreach ($childData as $datum) {
                     $child = null;
 
+                    // Attempts to find child entity by the given id in data.
                     if (isset($datum['id'])) {
                         $child = $this->em->getRepository($assocMapping['targetEntity'])->findOneById($datum['id']);
 
                         if ($child === null) {
-                            throw new LogicException("Invalid id {$datum['id']} for entity {$assocMapping['targetEntity']}");
+                            throw new EntityNotFoundException("Invalid id {$datum['id']} for entity {$assocMapping['targetEntity']}");
                         }
 
                         $presentIds[] = $datum['id'];
                     } else {
+                        // If no id is given, create a new instance of the entity.
                         $child = new $assocMapping['targetEntity'];
                     }
 
+                    // Persist the given data to the child entity
                     $collection->add($this->_persist($child, $datum, $entity));
                 }
 
-                if (self::$COLLECTION_REMOVE_STRATEGY === self::REMOVE_FROM_COLLECTION) {
-                    // Use the PersistentCollection to update non-present elements (bad performance).
-                    if ($entity->getId() !== null) {
-                        /** @var PersistentCollection $originalCollection */
-                        $originalCollection = $entity->{'get' . $ucField}();
+                // Use the PersistentCollection to remove non-present elements.
+                if ($entity->getId() !== null) {
+                    /** @var PersistentCollection $originalCollection */
+                    $originalCollection = $entity->{'get' . $ucField}();
 
-                        // Remove non-present elements from the original collection.
-                        foreach ($originalCollection as $element) {
-                            if (!in_array($element->getId(), $presentIds)) {
-                                $originalCollection->removeElement($element);
-                            }
+                    // Remove non-present elements from the original collection.
+                    foreach ($originalCollection as $element) {
+                        if (!in_array($element->getId(), $presentIds)) {
+                            $originalCollection->removeElement($element);
                         }
-
-                        // Add the new elements to the original collection.
-                        foreach ($collection as $element) {
-                            if (!$originalCollection->contains($element)) {
-                                $originalCollection->add($element);
-                            }
-                        }
-                    } else {
-                        $entity->{'set' . $ucField}($collection);
                     }
-                } else if (self::$COLLECTION_REMOVE_STRATEGY === self::REMOVE_DQL) {
+
+                    // Add the new elements to the original collection.
+                    foreach ($collection as $element) {
+                        if (!$originalCollection->contains($element)) {
+                            $originalCollection->add($element);
+                        }
+                    }
+                } else {
+                    // If the parent entity has not been persisted yet (no id given), simply set the collection.
                     $entity->{'set' . $ucField}($collection);
-
-                    // Delete non-present elements with DQL.
-                    // TODO: (Fix) When assoc is Unidirectional Many to Many the targetEntity becomes orphan, it should be deleted.
-                    // TODO: Add SoftDelete support.
-                    if ($entity->getId() !== null && isset($assocMapping['mappedBy'])) {
-                        $deleteQuery = $this->em->createQueryBuilder()
-                            ->from($assocMapping['targetEntity'], 'te');
-
-                        if (isset($this->getMetadata($assocMapping['targetEntity'])->fieldMappings['deletedAt'])) {
-                            $deleteQuery->update();
-                            $deleteQuery->set('te.deletedAt', ':deletedAt');
-                            $deleteQuery->setParameter('deletedAt', new DateTime());
-                        } else {
-                            $deleteQuery->delete();
-                        }
-
-                        // Remove non present ids.
-                        $deleteQuery->where('te.id NOT IN (:presentIds)')
-                            ->andWhere('te.' . $assocMapping['mappedBy'] . ' = :entityId')
-                            ->setParameter('presentIds', $presentIds ?: [-1])
-                            ->setParameter('entityId', $entity->getId());
-
-                        $this->deleteQueries[] = $deleteQuery->getQuery();
-                    }
                 }
             } else {
                 $parentClass = null;
@@ -215,9 +166,10 @@ class Persistence
 
                 $targetEntity = $metadata->associationMappings[$assocName]['targetEntity'];
 
+                // Sets parent ref to the appropriate association. Must have a setter method.
                 if ($parentClass && ($targetEntity === $parentClass || is_subclass_of($parentClass, $targetEntity)) && method_exists($entity, 'set' . $ucField)) {
                     $entity->{'set' . $ucField}($parentRef);
-                } else if (isset($childData)) {
+                } else if (!!$childData) {
                     $child = null;
 
                     if (isset($childData['id'])) {
@@ -230,6 +182,7 @@ class Persistence
                         $child = new $assocMapping['targetEntity'];
                     }
 
+                    // Should not persist association if its blacklisted or only contains 'id'
                     if (isset($this->persistBlacklist[$assocName]) || count(array_diff_key($childData, ['id' => 'id'])) === 0) {
                         $entity->{'set' . $ucField}($child);
                     } else {
@@ -240,7 +193,6 @@ class Persistence
         }
 
         $this->em->persist($entity);
-
         return $entity;
     }
 
@@ -275,9 +227,10 @@ class Persistence
     }
 
     /**
-     * @param object|string $entityObject The root entity being persisted.
+     * @param $entityObject
      * @param array $data
      * @return array
+     * @throws EntityNotFoundException
      */
     public function persist($entityObject, array $data)
     {
@@ -292,36 +245,8 @@ class Persistence
         }
 
         $this->_persist($entityObject, $data);
-
-        if (!empty($this->deleteQueries)) {
-            // Run the delete queries (removes non-present collection items).
-            $this->em->beginTransaction();
-
-            foreach ($this->deleteQueries as $query) {
-                $query->execute();
-            }
-
-            $this->em->flush();
-            $this->em->commit();
-
-            $this->deleteQueries = [];
-        } else {
-            $this->em->flush();
-        }
+        $this->em->flush();
 
         return $this->getIds($entityObject, $data);
-    }
-
-    /**
-     * Useful when making multiple persists in the same request. Dont forget to call commit()
-     */
-    public function beginTransaction()
-    {
-        $this->em->beginTransaction();
-    }
-
-    public function commit()
-    {
-        $this->em->commit();
     }
 }
