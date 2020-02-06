@@ -118,6 +118,9 @@ class PersonController extends AbstractController
 #### How it works
 The persistence class will recursively persist data to the entity and its associations using the Class Metadata definitions.
 
+## Be Careful!
+All data passed to the persist() method must have been validated and checked for mass assignment. This library will not help you with that.
+
 #### Conventions
 * The entity identifier must be named `id`.
 * All entity fields and associations must have getter and setter methods formatted in `camelCase`. e.g: `getName()`. Setter method for `id` is not required.
