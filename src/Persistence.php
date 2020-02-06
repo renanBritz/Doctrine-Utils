@@ -62,6 +62,20 @@ class Persistence
     }
 
     /**
+     * Wrapper to begin transaction in the current EntityManager. Should be used when
+     * calling persist multiple times.
+     */
+    public function beginTransaction()
+    {
+        $this->em->beginTransaction();
+    }
+
+    public function commit()
+    {
+        $this->em->commit();
+    }
+
+    /**
      * Calls setter methods for entity fields.
      *
      * @param $entity
@@ -75,7 +89,7 @@ class Persistence
                 continue;
             }
 
-            if (isset($data[$fieldName])) {
+            if (array_key_exists($fieldName, $data)) {
                 $value = $data[$fieldName];
                 $setter = 'set' . ucfirst($fieldName);
 
@@ -231,6 +245,7 @@ class Persistence
      * @param array $data
      * @return array
      * @throws EntityNotFoundException
+     * @throws InvalidArgumentException
      */
     public function persist($entityObject, array $data)
     {
