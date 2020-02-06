@@ -124,4 +124,4 @@ All data passed to the persist() method must have been validated and checked for
 #### Conventions
 * The entity identifier must be named `id`.
 * All entity fields and associations must have getter and setter methods formatted in `camelCase`. e.g: `getName()`. Setter method for `id` is not required.
-* When updating Collection Associations (One to Many or Many to Many), you must provide at least the id of elements that you want to keep. Otherwise they will be deleted.
+* When updating Collection Associations (One to Many or Many to Many), you must provide the id of elements that you want to keep. Otherwise they will be deleted. If you provide `id` along with other data, the entity will be kept and also persisted again.
